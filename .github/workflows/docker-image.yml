@@ -3,12 +3,18 @@ name: Docker Image CI
 on:
   push:
     branches: ["main"]
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Thiết lập Docker Buildx (Giúp build image ổn định hơn trên GitHub)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       # 🔑 Login Docker Hub
       - name: Login to Docker Hub
@@ -23,4 +29,35 @@ jobs:
         with:
           context: .
           push: true
+          # Đảm bảo lambao12122004 là username chính xác của bạn
           tags: lambao12122004/javadocker:latest
+          # Cache giúp các lần build sau nhanh hơn
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Triển khai lên DevOps Classroom
+        run: |
+          REPO="lambao12122004/javadocker"
+          TAG="latest"
+          # Cổng 80 thường dùng cho web, nếu app Java của bạn chạy cổng khác (vd: 8080) thì sửa tại đây
+          CONTAINER_PORT=80 
+          
+          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${{ secrets.DEPLOY_URL }}?repo=$REPO&tag=$TAG&slot=3&container_port=$CONTAINER_PORT&strict_container_port=0")
+          
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          CODE=$(echo "$RESPONSE" | tail -n 1)
+          
+          echo "Webhook HTTP Status: $CODE"
+          
+          if [ "$CODE" -lt 200 ] || [ "$CODE" -ge 300 ]; then
+            echo "Deploy thất bại."
+            echo "::group::Chi tiết lỗi"
+            echo "$BODY"
+            echo "::endgroup::"
+            exit 1
+          fi
+          
+          echo "Deploy thành công."
+          echo "::group::Chi tiết kết quả"
+          echo "$BODY"
+          echo "::endgroup::"
